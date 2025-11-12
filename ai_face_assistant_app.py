@@ -1,69 +1,102 @@
-# ai_face_assistant_app.py
 import streamlit as st
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="AI 看脸色助手", layout="wide")
+# ==============================
+# 股票数据获取与处理
+# ==============================
+def get_stock_data(ticker):
+    try:
+        df = yf.download(ticker, period="35d", interval="1d")
+        if df.empty:
+            st.error(f"未获取到 {ticker} 的数据，请检查股票代码或时间范围。")
+            return None, None
 
-st.title("📈 AI 看脸色助手")
-st.write("输入股票代码，我帮你看看行情的“脸色” 😊")
+        # 统一列名格式
+        df.rename(columns=lambda x: x.capitalize(), inplace=True)
+        if "Close" not in df.columns:
+            st.error("数据中没有 'Close' 列，可能是下载失败。")
+            return None, None
 
-# 输入股票代码
-symbol = st.text_input("请输入股票代码 (例：000001.SZ 或 AAPL)：", "000001.SZ")
+        df = df.sort_index(ascending=True)
+        df["MA5"] = df["Close"].rolling(window=5, min_periods=1).mean()
+        df["MA20"] = df["Close"].rolling(window=20, min_periods=1).mean()
+        df["MA50"] = df["Close"].rolling(window=50, min_periods=1).mean()
 
-# 数据拉取
-@st.cache_data(ttl=3600)  # 缓存1小时，减少重复请求
-def get_data(symbol):
-    df = yf.download(symbol, period="6mo", interval="1d")
-    if df.empty:
-        return None
-    df["MA20"] = df["Close"].rolling(window=20).mean()
-    df["MA50"] = df["Close"].rolling(window=50).mean()
-    return df
+        return df, ticker
+    except Exception as e:
+        st.error(f"获取数据时出错: {str(e)}")
+        return None, None
 
-df = get_data(symbol)
 
-# 判断数据是否成功拉取
-if df is None:
-    st.error("无法获取该股票数据，请检查股票代码。")
-else:
-    st.subheader(f"{symbol} 最近收盘价 & 均线")
-    st.line_chart(df[["Close", "MA20", "MA50"]])
+# ==============================
+# 数据分析逻辑
+# ==============================
+def analyze_stock(df):
+    if df is None or df.empty:
+        return "数据不足，无法分析", "暂无买入区间", "无法预测"
 
-    # AI 看脸色分析
-def analyze_face(df):
-    """
-    根据收盘价和均线计算“脸色”，返回文字描述
-    df: DataFrame，需要包含 ['Close','MA20','MA50']
-    """
-    # 检查数据
-    if df.empty or len(df) < 50:
-        return "数据不足，无法分析"
+    latest = df.iloc[-1]
 
-    # 确保 MA20 和 MA50 是数值，而不是 Series
-    close = float(df["Close"].iloc[-1])
-    ma20 = float(df["MA20"].iloc[-1])
-    ma50 = float(df["MA50"].iloc[-1])
-    prev_close = float(df["Close"].iloc[-2])
+    ma5 = latest["Ma5"] if "Ma5" in latest else None
+    ma20 = latest["Ma20"] if "Ma20" in latest else None
+    ma50 = latest["Ma50"] if "Ma50" in latest else None
+    close = latest["Close"]
 
-    # 根据收盘价与均线关系判断脸色
-    if close > ma20 > ma50:
-        face = "😊 开心：行情看起来不错"
-    elif close < ma20 < ma50:
-        face = "😟 忧心：行情偏弱，注意风险"
+    # 防止NaN错误
+    if any(pd.isna(x) for x in [ma5, ma20, ma50, close]):
+        return "数据不足", "暂无买入区间", "无法预测"
+
+    # 情绪判断
+    if close > ma5 > ma20:
+        mood = "市场情绪偏强（多头趋势）"
+    elif close < ma5 < ma20:
+        mood = "市场情绪偏弱（空头趋势）"
     else:
-        face = "😐 平常：行情震荡，谨慎操作"
+        mood = "震荡整理（情绪中性）"
 
-    # 最新涨跌幅
-    pct_change = (close - prev_close) / prev_close * 100
-    face += f"（最新涨跌幅：{pct_change:.2f}%）"
+    # 买入区间（简单示例）
+    buy_zone = f"{round(ma20 * 0.98, 2)} - {round(ma20 * 1.02, 2)}"
 
-    return face
+    # 趋势预测
+    if ma5 > ma20 > ma50:
+        trend = "短期看涨，趋势良好"
+    elif ma5 < ma20 < ma50:
+        trend = "短期下行，需谨慎"
+    else:
+        trend = "趋势不明朗，建议观望"
+
+    return mood, buy_zone, trend
 
 
+# ==============================
+# 主程序
+# ==============================
+def main():
+    st.set_page_config(page_title="AI股票分析助手", page_icon="📈", layout="centered")
+
+    st.title("📊 AI 股票分析助手")
+    st.write("输入股票代码（例如：AAPL、TSLA、MSFT、0700.HK、600519.SS）")
+
+    ticker = st.text_input("请输入股票代码：", "AAPL")
+
+    if st.button("开始分析"):
+        df, ticker = get_stock_data(ticker)
+
+        if df is not None and not df.empty:
+            st.subheader(f"📈 {ticker} 最近走势")
+            st.line_chart(df[["Close", "MA20", "MA50"]])
+
+            mood, price_range, future_trend = analyze_stock(df)
+
+            st.markdown("### 💡 分析结果")
+            st.write(f"**当前行情情绪：** {mood}")
+            st.write(f"**建议买入价区间：** {price_range}")
+            st.write(f"**未来趋势预测：** {future_trend}")
+        else:
+            st.warning("未能成功获取数据，请检查输入的股票代码。")
 
 
-    result = analyze_face(df)
-    st.subheader("📊 AI 看脸色结果")
-    st.write(result)
+if __name__ == "__main__":
+    main()
