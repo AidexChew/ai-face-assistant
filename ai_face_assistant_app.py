@@ -95,21 +95,100 @@ def main():
     st.markdown("输入股票代码（示例：`AAPL`, `TSLA`, `0700.HK`, `600519.SS`）")
     st.divider()
 
-    ticker = st.text_input("请输入股票代码：", "AAPL")
+    # 添加自定义CSS样式来优化分析结果的显示
+    st.markdown("""
+    <style>
+    .analysis-card {
+        padding: 12px;
+        border-radius: 8px;
+        margin: 8px 0;
+        border-left: 4px solid;
+        background-color: #f8f9fa;
+    }
+    .mood-card {
+        border-left-color: #FF4B4B;
+        background-color: #FFF5F5;
+    }
+    .price-card {
+        border-left-color: #00D4AA;
+        background-color: #F0FFFD;
+    }
+    .trend-card {
+        border-left-color: #6F42C1;
+        background-color: #F8F7FF;
+    }
+    .result-text {
+        font-size: 14px;
+        font-weight: bold;
+        margin: 0;
+    }
+    .metric-label {
+        font-size: 12px;
+        color: #666;
+        margin-bottom: 4px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    if st.button("开始分析"):
+    # 移除了按钮，改为直接通过文本输入触发查询
+    ticker = st.text_input("请输入股票代码：", "AAPL", key="stock_input")
+    
+    # 当有输入时自动触发分析（去掉按钮）
+    if ticker:
         with st.spinner("正在获取数据并分析，请稍候..."):
             df, ticker_used = get_stock_data(ticker)
 
             if df is not None and not df.empty:
-                st.success(f"✅ 成功获取 {ticker_used} 的{len(df)}天数据")
-                st.subheader(f"📈 {ticker_used} 最近行情趋势")
-
-                # 调试信息（部署后可注释掉）
-                with st.expander("数据列信息（调试）"):
-                    st.write(f"可用列: {list(df.columns)}")
-                    st.write(f"数据形状: {df.shape}")
-
+                # 移除了过强的成功提示
+                st.subheader(f"📈 {ticker_used} 分析结果")
+                
+                # 分析股票数据
+                mood, price_range, future_trend = analyze_stock(df)
+                
+                # 使用三列布局高亮显示分析结果
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # 当前行情情绪卡片 - 使用更紧凑的布局
+                    st.markdown(
+                        f"""
+                        <div class="analysis-card mood-card">
+                            <div class="metric-label">当前行情情绪</div>
+                            <div class="result-text">{mood}</div>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                
+                with col2:
+                    # 建议买入价区间卡片
+                    st.markdown(
+                        f"""
+                        <div class="analysis-card price-card">
+                            <div class="metric-label">建议买入价区间</div>
+                            <div class="result-text">{price_range}</div>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                
+                with col3:
+                    # 未来趋势预测卡片
+                    st.markdown(
+                        f"""
+                        <div class="analysis-card trend-card">
+                            <div class="metric-label">未来趋势预测</div>
+                            <div class="result-text">{future_trend}</div>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                
+                st.divider()
+                
+                # 最近行情趋势图 - 移到分析结果下面，但在交易日数据之前
+                st.subheader("📊 最近行情趋势")
+                
                 # 安全的图表绘制：只绘制存在的列
                 desired_chart_columns = ["Close", "MA5", "MA20", "MA50"]
                 columns_to_show = get_available_columns(df, desired_chart_columns)
@@ -119,21 +198,8 @@ def main():
                 else:
                     st.warning("⚠️ 没有可用的数据列来绘制图表")
 
-                # 输出分析结果
-                mood, price_range, future_trend = analyze_stock(df)
-
-                st.markdown("### 💡 分析结果")
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("当前行情情绪", mood)
-                with col2:
-                    st.metric("建议买入价区间", price_range)
-                with col3:
-                    st.metric("未来趋势预测", future_trend)
-
                 # 显示最近几天数据
-                st.markdown("#### 最近5个交易日数据")
+                st.subheader("📋 最近5个交易日数据")
                 display_columns = ["Close", "MA5", "MA20", "MA50"]
                 available_display_cols = get_available_columns(df, display_columns)
                 if available_display_cols:
