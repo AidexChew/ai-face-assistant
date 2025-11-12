@@ -3,6 +3,7 @@ import pandas as pd
 import yfinance as yf
 import matplotlib.pyplot as plt
 
+
 # ========== 获取股票数据 ==========
 def get_stock_data(ticker):
     try:
@@ -17,7 +18,9 @@ def get_stock_data(ticker):
 
         return df, ticker
     except Exception as e:
+        st.error(f"获取数据时出错: {str(e)}")
         return None, None
+
 
 # ========== 分析逻辑 ==========
 def analyze_stock(df):
@@ -33,15 +36,15 @@ def analyze_stock(df):
         if pd.notna(ma5) and pd.notna(ma20) and pd.notna(ma50):
             # 简单均线趋势判断
             if ma5 > ma20 > ma50:
-                mood = "📈 强势上涨"
+                mood = "强势上涨"
                 price_range = f"{latest['Close'] * 0.95:.2f} - {latest['Close'] * 1.05:.2f}"
                 future_trend = "短期看涨"
             elif ma5 < ma20 < ma50:
-                mood = "📉 弱势下跌"
+                mood = "弱势下跌"
                 price_range = f"{latest['Close'] * 0.85:.2f} - {latest['Close'] * 0.95:.2f}"
                 future_trend = "短期看跌"
             else:
-                mood = "⚖️ 震荡整理"
+                mood = "震荡整理"
                 price_range = f"{latest['Close'] * 0.9:.2f} - {latest['Close'] * 1.1:.2f}"
                 future_trend = "横盘或微幅波动"
         else:
@@ -50,30 +53,51 @@ def analyze_stock(df):
         return mood, price_range, future_trend
 
     except Exception as e:
+        st.error(f"分析出错: {str(e)}")
         return "错误", "暂无", "无法预测"
+
 
 # ========== 主程序入口 ==========
 def main():
-    st.set_page_config(
-        page_title="咧啊，股神", 
-        page_icon="📈", 
-        layout="centered",
-        initial_sidebar_state="collapsed"
-    )
+    st.set_page_config(page_title="咧啊，股神", page_icon="📈", layout="centered")
 
-    # 标题区域
     st.title("📊 咧啊，股神")
     st.markdown("输入股票代码（示例：`AAPL`, `TSLA`, `0700.HK`, `600519.SS`）")
     st.divider()
 
-    # 输入区域 - 直接输入后回车查询
-    ticker = st.text_input(
-        "请输入股票代码：", 
-        "AAPL",
-        help="输入后按回车键开始分析"
-    )
+    # 使用文本输入框，移除按钮，直接通过输入触发
+    ticker = st.text_input("请输入股票代码：", "AAPL", key="stock_input")
+    
+    # 添加自定义CSS样式来优化显示
+    st.markdown("""
+    <style>
+    .analysis-card {
+        padding: 12px;
+        border-radius: 8px;
+        margin: 8px 0;
+        border-left: 4px solid;
+    }
+    .mood-card {
+        border-left-color: #FF4B4B;
+        background-color: #FFF5F5;
+    }
+    .price-card {
+        border-left-color: #00D4AA;
+        background-color: #F0FFFD;
+    }
+    .trend-card {
+        border-left-color: #6F42C1;
+        background-color: #F8F7FF;
+    }
+    .result-text {
+        font-size: 14px;
+        font-weight: bold;
+        margin: 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    # 自动触发分析（去掉按钮）
+    # 当有输入时自动触发分析（去掉按钮）
     if ticker:
         with st.spinner("正在获取数据并分析，请稍候..."):
             df, ticker_used = get_stock_data(ticker)
@@ -81,48 +105,43 @@ def main():
             if df is not None and not df.empty:
                 st.subheader(f"📈 {ticker_used} 分析结果")
                 
-                # 分析股票
+                # 分析股票数据
                 mood, price_range, future_trend = analyze_stock(df)
                 
-                # 高亮显示分析结果 - 使用彩色卡片布局
+                # 使用三列布局高亮显示分析结果
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     # 当前行情情绪卡片
-                    if "上涨" in mood:
-                        color_style = "background: linear-gradient(135deg, #d4edda, #c3e6cb); border-left: 4px solid #28a745;"
-                    elif "下跌" in mood:
-                        color_style = "background: linear-gradient(135deg, #f8d7da, #f5c6cb); border-left: 4px solid #dc3545;"
-                    else:
-                        color_style = "background: linear-gradient(135deg, #fff3cd, #ffeaa7); border-left: 4px solid #ffc107;"
-                    
                     st.markdown(
                         f"""
-                        <div style="{color_style} padding: 15px; border-radius: 8px; margin: 10px 0;">
-                            <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #555;">当前行情情绪</h4>
-                            <p style="margin: 0; font-size: 16px; font-weight: bold;">{mood}</p>
+                        <div class="analysis-card mood-card">
+                            <p style="font-size: 12px; margin: 0 0 4px 0; color: #666;">当前行情情绪</p>
+                            <p class="result-text">{mood}</p>
                         </div>
                         """, 
                         unsafe_allow_html=True
                     )
                 
                 with col2:
+                    # 建议买入价区间卡片
                     st.markdown(
                         f"""
-                        <div style="background: linear-gradient(135deg, #d1ecf1, #bee5eb); padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #17a2b8;">
-                            <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #555;">建议买入价区间</h4>
-                            <p style="margin: 0; font-size: 16px; font-weight: bold;">{price_range}</p>
+                        <div class="analysis-card price-card">
+                            <p style="font-size: 12px; margin: 0 0 4px 0; color: #666;">建议买入价区间</p>
+                            <p class="result-text">{price_range}</p>
                         </div>
                         """, 
                         unsafe_allow_html=True
                     )
                 
                 with col3:
+                    # 未来趋势预测卡片
                     st.markdown(
                         f"""
-                        <div style="background: linear-gradient(135deg, #e2e3e5, #d6d8db); padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #6c757d;">
-                            <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #555;">未来趋势预测</h4>
-                            <p style="margin: 0; font-size: 16px; font-weight: bold;">{future_trend}</p>
+                        <div class="analysis-card trend-card">
+                            <p style="font-size: 12px; margin: 0 0 4px 0; color: #666;">未来趋势预测</p>
+                            <p class="result-text">{future_trend}</p>
                         </div>
                         """, 
                         unsafe_allow_html=True
@@ -130,7 +149,7 @@ def main():
                 
                 st.divider()
                 
-                # 最近行情趋势图 - 移到分析结果下面
+                # 最近行情趋势图 - 移到分析结果下面，但在交易日数据之前
                 st.subheader("📊 最近行情趋势")
                 
                 # 防止 KeyError：只画存在的列
@@ -163,6 +182,7 @@ def main():
 
     st.divider()
     st.caption("🚀 本应用由 AI 驱动，仅供学习参考，不构成投资建议。")
+
 
 if __name__ == "__main__":
     main()
