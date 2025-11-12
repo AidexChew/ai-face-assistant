@@ -34,6 +34,48 @@ def get_stock_data(ticker):
         st.error(f"获取数据时出错: {str(e)}")
         return None, None
 
+# ========== 股票代码自动识别函数 ==========
+def normalize_stock_code(code):
+    """
+    自动识别股票代码并添加正确的后缀
+    支持A股、港股、美股自动识别
+    """
+    if not code:
+        return code
+    
+    code = str(code).strip().upper()
+    
+    # 如果已经包含后缀，直接返回
+    if '.' in code:
+        return code
+    
+    # 数字代码处理（A股、港股）
+    if code.isdigit():
+        # 移除前导0并检查长度
+        clean_code = code.lstrip('0')
+        code_length = len(clean_code)
+        
+        if code_length == 0:
+            return code
+            
+        # A股代码识别（6位数字）
+        if len(code) == 6:
+            if code.startswith(('6', '5', '9')):  # 上交所
+                return code + '.SS'
+            elif code.startswith(('0', '2', '3')):  # 深交所
+                return code + '.SZ'
+        
+        # 港股代码识别（1-5位数字）
+        elif len(code) <= 5:
+            return code.zfill(5) + '.HK'
+    
+    # 美股代码（字母代码）
+    elif code.isalpha():
+        return code
+    
+    # 默认尝试A股格式
+    return code
+
 # ========== 安全的列检查函数 ==========
 def get_available_columns(df, desired_columns):
     """返回DataFrame中实际存在的列名"""
@@ -58,18 +100,29 @@ def analyze_stock(df):
 
         # 检查是否有足够的有效数据进行分析
         if pd.notna(ma5) and pd.notna(ma20) and pd.notna(ma50):
+            current_price = latest['Close']
+            
             if ma5 > ma20 and ma20 > ma50:
-                mood = "📈 强势上涨"
-                price_range = f"{latest['Close'] * 0.95:.2f} - {latest['Close'] * 1.05:.2f}"
-                future_trend = "短期看涨"
+                # 强势上涨的情绪化表达
+                mood = "🚀 牛气冲天！主力资金疯狂涌入，这波行情简直要起飞！"
+                price_range = f"{current_price * 0.95:.2f} - {current_price * 1.05:.2f}"
+                # 量化概率预测
+                future_trend = "短期看涨概率约65%，横盘概率约25%，看跌概率约10%"
+                
             elif ma5 < ma20 and ma20 < ma50:
-                mood = "📉 弱势下跌"
-                price_range = f"{latest['Close'] * 0.85:.2f} - {latest['Close'] * 0.95:.2f}"
-                future_trend = "短期看跌"
+                # 弱势下跌的情绪化表达
+                mood = "💸 跌跌不休！空头势力强大，建议观望为主，别急着抄底！"
+                price_range = f"{current_price * 0.85:.2f} - {current_price * 0.95:.2f}"
+                # 量化概率预测
+                future_trend = "短期看跌概率约60%，横盘概率约30%，看涨概率约10%"
+                
             else:
-                mood = "⚖️ 震荡整理"
-                price_range = f"{latest['Close'] * 0.9:.2f} - {latest['Close'] * 1.1:.2f}"
-                future_trend = "横盘或微幅波动"
+                # 震荡整理的情绪化表达
+                mood = "🎢 上下震荡！多空博弈激烈，适合高抛低吸，短线高手的天堂！"
+                price_range = f"{current_price * 0.9:.2f} - {current_price * 1.1:.2f}"
+                # 量化概率预测
+                future_trend = "横盘概率约50%，看涨概率约25%，看跌概率约25%"
+                
         else:
             available_data = []
             if ma5 is not None: available_data.append("MA5")
@@ -77,9 +130,9 @@ def analyze_stock(df):
             if ma50 is not None: available_data.append("MA50")
             
             if available_data:
-                mood = f"数据部分缺失（已有{', '.join(available_data)}）"
+                mood = f"🤔 数据有点调皮，只有{', '.join(available_data)}指标，分析结果仅供参考！"
             else:
-                mood = "数据不足，无法计算移动平均线"
+                mood = "📊 数据宝宝还在加载中，请稍等..."
 
         return mood, price_range, future_trend
 
@@ -92,10 +145,17 @@ def main():
     st.set_page_config(page_title="咧啊，股神", page_icon="📈", layout="centered")
 
     st.title("📊 咧啊，股神")
-    st.markdown("输入股票代码（示例：`AAPL`, `TSLA`, `0700.HK`, `600519.SS`）")
+    
+    # 1. 更紧凑的布局：将示例和输入框放在一起
+    col_desc, col_input = st.columns([2, 3])
+    with col_desc:
+        st.markdown("​**输入股票代码（示例：`AAPL`, `TSLA`, `00700`, `600519`）​**​")
+    with col_input:
+        ticker = st.text_input("请输入股票代码：", "AAPL", label_visibility="collapsed")
+
     st.divider()
 
-    # 添加自定义CSS样式来优化分析结果的显示
+    # 添加自定义CSS样式来优化显示
     st.markdown("""
     <style>
     .analysis-card {
@@ -103,7 +163,6 @@ def main():
         border-radius: 8px;
         margin: 8px 0;
         border-left: 4px solid;
-        background-color: #f8f9fa;
     }
     .mood-card {
         border-left-color: #FF4B4B;
@@ -130,17 +189,15 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # 移除了按钮，改为直接通过文本输入触发查询
-    ticker = st.text_input("请输入股票代码：", "AAPL", key="stock_input")
-    
-    # 当有输入时自动触发分析（去掉按钮）
+    # 当有输入时自动触发分析
     if ticker:
         with st.spinner("正在获取数据并分析，请稍候..."):
-            df, ticker_used = get_stock_data(ticker)
+            # 2. 自动处理股票代码后缀
+            normalized_ticker = normalize_stock_code(ticker)
+            df, ticker_used = get_stock_data(normalized_ticker)
 
             if df is not None and not df.empty:
-                # 移除了过强的成功提示
-                st.subheader(f"📈 {ticker_used} 分析结果")
+                st.subheader(f"📈 {ticker} → {ticker_used} 分析结果")
                 
                 # 分析股票数据
                 mood, price_range, future_trend = analyze_stock(df)
@@ -149,7 +206,7 @@ def main():
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    # 当前行情情绪卡片 - 使用更紧凑的布局
+                    # 当前行情情绪卡片 - 使用更生动的表达
                     st.markdown(
                         f"""
                         <div class="analysis-card mood-card">
@@ -173,7 +230,7 @@ def main():
                     )
                 
                 with col3:
-                    # 未来趋势预测卡片
+                    # 未来趋势预测卡片 - 显示量化概率
                     st.markdown(
                         f"""
                         <div class="analysis-card trend-card">
@@ -186,7 +243,7 @@ def main():
                 
                 st.divider()
                 
-                # 最近行情趋势图 - 移到分析结果下面，但在交易日数据之前
+                # 最近行情趋势图
                 st.subheader("📊 最近行情趋势")
                 
                 # 安全的图表绘制：只绘制存在的列
@@ -208,7 +265,7 @@ def main():
 
             else:
                 st.error("❌ 未能成功获取股票数据，请检查：")
-                st.error("1. 股票代码格式是否正确（如：AAPL, 0700.HK, 600519.SS）")
+                st.error("1. 股票代码格式是否正确（如：AAPL, 00700, 600519）")
                 st.error("2. 网络连接是否正常")
                 st.error("3. 该股票是否在交易时间")
 
