@@ -6,63 +6,37 @@ import matplotlib.pyplot as plt
 # ========== 获取股票数据 ==========
 def get_stock_data(ticker):
     try:
-        # 使用Ticker对象而不是download，更稳定
-        stock = yf.Ticker(ticker)
-        df = stock.history(period="60d", interval="1d")
-        
+        df = yf.download(ticker, period="60d", interval="1d")
         if df.empty:
-            st.warning(f"未找到股票 {ticker} 的数据，请检查代码是否正确")
             return None, None
 
-        # 修复列名：如果是MultiIndex，转换为单级索引
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)  # 只取第一级列名
-        
         df = df.sort_index(ascending=True)
-        
-        # 确保有足够数据计算移动平均
-        if len(df) >= 5:
-            df["MA5"] = df["Close"].rolling(window=5, min_periods=1).mean()
-        if len(df) >= 20:
-            df["MA20"] = df["Close"].rolling(window=20, min_periods=1).mean()
-        if len(df) >= 50:
-            df["MA50"] = df["Close"].rolling(window=50, min_periods=1).mean()
+        df["MA5"] = df["Close"].rolling(window=5, min_periods=1).mean()
+        df["MA20"] = df["Close"].rolling(window=20, min_periods=1).mean()
+        df["MA50"] = df["Close"].rolling(window=50, min_periods=1).mean()
 
         return df, ticker
-        
     except Exception as e:
-        st.error(f"获取数据时出错: {str(e)}")
         return None, None
-
-# ========== 安全的列检查函数 ==========
-def get_available_columns(df, desired_columns):
-    """返回DataFrame中实际存在的列名"""
-    if df is None:
-        return []
-    return [col for col in desired_columns if col in df.columns]
 
 # ========== 分析逻辑 ==========
 def analyze_stock(df):
     try:
-        if df is None or df.empty:
-            return "数据不足", "暂无买入区间", "无法预测"
-            
         latest = df.iloc[-1]
 
-        # 安全地获取移动平均值，处理可能的NaN
-        ma5 = latest["MA5"] if "MA5" in df.columns and pd.notna(latest["MA5"]) else None
-        ma20 = latest["MA20"] if "MA20" in df.columns and pd.notna(latest["MA20"]) else None
-        ma50 = latest["MA50"] if "MA50" in df.columns and pd.notna(latest["MA50"]) else None
+        ma5 = latest["MA5"] if "MA5" in latest else None
+        ma20 = latest["MA20"] if "MA20" in latest else None
+        ma50 = latest["MA50"] if "MA50" in latest else None
 
         mood, price_range, future_trend = "未知", "暂无买入区间", "无法预测"
 
-        # 检查是否有足够的有效数据进行分析
         if pd.notna(ma5) and pd.notna(ma20) and pd.notna(ma50):
-            if ma5 > ma20 and ma20 > ma50:
+            # 简单均线趋势判断
+            if ma5 > ma20 > ma50:
                 mood = "📈 强势上涨"
                 price_range = f"{latest['Close'] * 0.95:.2f} - {latest['Close'] * 1.05:.2f}"
                 future_trend = "短期看涨"
-            elif ma5 < ma20 and ma20 < ma50:
+            elif ma5 < ma20 < ma50:
                 mood = "📉 弱势下跌"
                 price_range = f"{latest['Close'] * 0.85:.2f} - {latest['Close'] * 0.95:.2f}"
                 future_trend = "短期看跌"
@@ -71,74 +45,115 @@ def analyze_stock(df):
                 price_range = f"{latest['Close'] * 0.9:.2f} - {latest['Close'] * 1.1:.2f}"
                 future_trend = "横盘或微幅波动"
         else:
-            available_data = []
-            if ma5 is not None: available_data.append("MA5")
-            if ma20 is not None: available_data.append("MA20") 
-            if ma50 is not None: available_data.append("MA50")
-            
-            if available_data:
-                mood = f"数据部分缺失（已有{', '.join(available_data)}）"
-            else:
-                mood = "数据不足，无法计算移动平均线"
+            mood = "数据不足，无法分析"
 
         return mood, price_range, future_trend
 
     except Exception as e:
-        st.error(f"分析出错: {str(e)}")
         return "错误", "暂无", "无法预测"
 
 # ========== 主程序入口 ==========
 def main():
-    st.set_page_config(page_title="咧啊，股神", page_icon="📈", layout="centered")
+    st.set_page_config(
+        page_title="咧啊，股神", 
+        page_icon="📈", 
+        layout="centered",
+        initial_sidebar_state="collapsed"
+    )
 
+    # 标题区域
     st.title("📊 咧啊，股神")
     st.markdown("输入股票代码（示例：`AAPL`, `TSLA`, `0700.HK`, `600519.SS`）")
     st.divider()
 
-    ticker = st.text_input("请输入股票代码：", "AAPL")
+    # 输入区域 - 直接输入后回车查询
+    ticker = st.text_input(
+        "请输入股票代码：", 
+        "AAPL",
+        help="输入后按回车键开始分析"
+    )
 
-    if st.button("开始分析"):
+    # 自动触发分析（去掉按钮）
+    if ticker:
         with st.spinner("正在获取数据并分析，请稍候..."):
             df, ticker_used = get_stock_data(ticker)
 
             if df is not None and not df.empty:
-                st.success(f"✅ 成功获取 {ticker_used} 的{len(df)}天数据")
-                st.subheader(f"📈 {ticker_used} 最近行情趋势")
-
-                # 调试信息（部署后可注释掉）
-                with st.expander("数据列信息（调试）"):
-                    st.write(f"可用列: {list(df.columns)}")
-                    st.write(f"数据形状: {df.shape}")
-
-                # 安全的图表绘制：只绘制存在的列
-                desired_chart_columns = ["Close", "MA5", "MA20", "MA50"]
-                columns_to_show = get_available_columns(df, desired_chart_columns)
+                st.subheader(f"📈 {ticker_used} 分析结果")
                 
+                # 分析股票
+                mood, price_range, future_trend = analyze_stock(df)
+                
+                # 高亮显示分析结果 - 使用彩色卡片布局
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    # 当前行情情绪卡片
+                    if "上涨" in mood:
+                        color_style = "background: linear-gradient(135deg, #d4edda, #c3e6cb); border-left: 4px solid #28a745;"
+                    elif "下跌" in mood:
+                        color_style = "background: linear-gradient(135deg, #f8d7da, #f5c6cb); border-left: 4px solid #dc3545;"
+                    else:
+                        color_style = "background: linear-gradient(135deg, #fff3cd, #ffeaa7); border-left: 4px solid #ffc107;"
+                    
+                    st.markdown(
+                        f"""
+                        <div style="{color_style} padding: 15px; border-radius: 8px; margin: 10px 0;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #555;">当前行情情绪</h4>
+                            <p style="margin: 0; font-size: 16px; font-weight: bold;">{mood}</p>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                
+                with col2:
+                    st.markdown(
+                        f"""
+                        <div style="background: linear-gradient(135deg, #d1ecf1, #bee5eb); padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #17a2b8;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #555;">建议买入价区间</h4>
+                            <p style="margin: 0; font-size: 16px; font-weight: bold;">{price_range}</p>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                
+                with col3:
+                    st.markdown(
+                        f"""
+                        <div style="background: linear-gradient(135deg, #e2e3e5, #d6d8db); padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #6c757d;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #555;">未来趋势预测</h4>
+                            <p style="margin: 0; font-size: 16px; font-weight: bold;">{future_trend}</p>
+                        </div>
+                        """, 
+                        unsafe_allow_html=True
+                    )
+                
+                st.divider()
+                
+                # 最近行情趋势图 - 移到分析结果下面
+                st.subheader("📊 最近行情趋势")
+                
+                # 防止 KeyError：只画存在的列
+                columns_to_show = [c for c in ["Close", "MA20", "MA50"] if c in df.columns]
                 if columns_to_show:
                     st.line_chart(df[columns_to_show])
                 else:
-                    st.warning("⚠️ 没有可用的数据列来绘制图表")
+                    st.warning("图表列缺失，无法绘制走势图。")
 
-                # 输出分析结果
-                mood, price_range, future_trend = analyze_stock(df)
-
-                st.markdown("### 💡 分析结果")
+                # 最近交易日数据
+                st.subheader("📋 最近5个交易日数据")
+                display_columns = []
+                for col in ["Close", "MA5", "MA20", "MA50"]:
+                    if col in df.columns:
+                        display_columns.append(col)
                 
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("当前行情情绪", mood)
-                with col2:
-                    st.metric("建议买入价区间", price_range)
-                with col3:
-                    st.metric("未来趋势预测", future_trend)
-
-                # 显示最近几天数据
-                st.markdown("#### 最近5个交易日数据")
-                display_columns = ["Close", "MA5", "MA20", "MA50"]
-                available_display_cols = get_available_columns(df, display_columns)
-                if available_display_cols:
-                    recent_data = df.tail(5)[available_display_cols]
-                    st.dataframe(recent_data.style.format("{:.2f}"), use_container_width=True)
+                if display_columns:
+                    recent_data = df.tail(5)[display_columns]
+                    # 格式化数字显示
+                    formatted_data = recent_data.round(2)
+                    st.dataframe(formatted_data, use_container_width=True)
+                else:
+                    st.warning("暂无完整的指标数据")
 
             else:
                 st.error("❌ 未能成功获取股票数据，请检查：")
